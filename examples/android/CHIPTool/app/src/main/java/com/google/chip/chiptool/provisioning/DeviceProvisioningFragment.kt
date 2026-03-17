@@ -74,6 +74,7 @@ class DeviceProvisioningFragment : Fragment(), ServiceResolveListener {
   private lateinit var scope: CoroutineScope
 
   private var dialog: AlertDialog? = null
+  private var nfcCommissioningAlertDialog: AlertDialog? = null
   private var currentNfcCommissioningStage : String = commissioningStage_Cleanup
 
   // NFC commissioning variables
@@ -120,7 +121,10 @@ class DeviceProvisioningFragment : Fragment(), ServiceResolveListener {
   override fun onStop() {
     super.onStop()
     gatt = null
+    dialog?.dismiss()
     dialog = null
+    dismissNfcCommissioningPopup()
+    ChipClient.setServiceResolveListener(null)
   }
 
   override fun onDestroy() {
@@ -149,7 +153,7 @@ class DeviceProvisioningFragment : Fragment(), ServiceResolveListener {
           "AttestationVerificationResult enum to understand the errors"
       )
 
-      val activity = requireActivity()
+      val activity = activity ?: return@setDeviceAttestationDelegate
 
       if (errorCode == STATUS_PAIRING_SUCCESS) {
         activity.runOnUiThread(Runnable { deviceController.continueCommissioning(devicePtr, true) })
@@ -307,8 +311,13 @@ class DeviceProvisioningFragment : Fragment(), ServiceResolveListener {
   }
 
   private fun showMessage(msgResId: Int, stringArgs: String? = null) {
-    requireActivity().runOnUiThread {
-      val context = requireContext()
+    val activity = activity ?: return
+    activity.runOnUiThread {
+      if (!isAdded) {
+        return@runOnUiThread
+      }
+
+      val context = context ?: return@runOnUiThread
       val msg = context.getString(msgResId, stringArgs)
       Log.i(TAG, "showMessage:$msg")
       Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
@@ -390,9 +399,10 @@ class DeviceProvisioningFragment : Fragment(), ServiceResolveListener {
         TAG,
         "onICDRegistrationComplete - errorCode: $errorCode, symmetricKey : ${icdDeviceInfo.symmetricKey.toHex()}, icdDeviceInfo : $icdDeviceInfo"
       )
-      requireActivity().runOnUiThread {
+      val activity = activity ?: return
+      activity.runOnUiThread {
         Toast.makeText(
-            requireActivity(),
+            activity,
             getString(
               R.string.icd_registration_completed,
               icdDeviceInfo.userActiveModeTriggerHint.toString(),
@@ -420,8 +430,15 @@ class DeviceProvisioningFragment : Fragment(), ServiceResolveListener {
 
   fun displayNfcCommissioningPopup() {
 
-    requireActivity().runOnUiThread(java.lang.Runnable {
-      val alertDialogBuilder = AlertDialog.Builder(requireActivity())
+    val activity = activity ?: return
+    activity.runOnUiThread(java.lang.Runnable {
+      if (!isAdded || this.activity == null) {
+        return@Runnable
+      }
+
+      dismissNfcCommissioningPopup()
+
+      val alertDialogBuilder = AlertDialog.Builder(activity)
 
       // inflate XML content
       nfcCommissioningAlertDialogView =
@@ -450,6 +467,7 @@ class DeviceProvisioningFragment : Fragment(), ServiceResolveListener {
 
       // create alert dialog
       val alertDialog = alertDialogBuilder.create()
+      nfcCommissioningAlertDialog = alertDialog
 
       nfcCommissioningCompleted = false
       nfcUnpoweredPhaseCompleted = false
@@ -500,7 +518,7 @@ class DeviceProvisioningFragment : Fragment(), ServiceResolveListener {
 
   // Update the UI showing the progression of NFC-based commissioning
   private fun displayNfcCommissioningProgress(stage: String) {
-    if (nfcCommissioningAlertDialogView == null) {
+    if (!isAdded || activity == null || nfcCommissioningAlertDialogView == null) {
       // nfcCommissioningAlertDialog is not displayed. This happens when doing other kind of
       // commissioning (BLE, Wifi PAF...) or when the popup has been closed in the meantime.
       return
@@ -515,6 +533,8 @@ class DeviceProvisioningFragment : Fragment(), ServiceResolveListener {
       commissioningStage_SendNOC -> {
         displaySetNOCStage()
       }
+      commissioningStage_WiFiNetworkSetup,
+      commissioningStage_WiFiNetworkEnable,
       commissioningStage_ThreadNetworkSetup -> {
         displaySetOperationalNetworkStage()
       }
@@ -636,6 +656,7 @@ class DeviceProvisioningFragment : Fragment(), ServiceResolveListener {
         val clickHereWhenDoneTextView =
           nfcCommissioningAlertDialogView!!.findViewById<TextView>(R.id.clickHereWhenDoneTextView)
 
+        nfcUnpoweredPhaseCompleted = true
         setAnimatedImageView(null);
         pleaseSwitchOnTheDeviceTextView.setTextColor(resources.getColor(R.color.dark_blue))
         pleaseSwitchOnTheDeviceTextView.setTypeface(Typeface.DEFAULT_BOLD)
@@ -700,10 +721,18 @@ class DeviceProvisioningFragment : Fragment(), ServiceResolveListener {
 
   private fun continueCommissioningAfterConnectNetworkRequest() {
     operationalDiscoveryDone = false
+    nfcUnpoweredPhaseCompleted = false
 
     val chipDeviceController = ChipClient.getDeviceController(requireActivity())
 
     chipDeviceController.continueCommissioningAfterConnectNetworkRequest(deviceId)
+  }
+
+  private fun dismissNfcCommissioningPopup() {
+    nfcCommissioningAlertDialog?.dismiss()
+    nfcCommissioningAlertDialog = null
+    nfcCommissioningAlertDialogView = null
+    animatedImageView = null
   }
 
 
@@ -717,6 +746,8 @@ class DeviceProvisioningFragment : Fragment(), ServiceResolveListener {
     const val commissioningStage_ReadCommissioningInfo = "ReadCommissioningInfo"
     const val commissioningStage_SendDACCertificateRequest = "SendDACCertificateRequest"
     const val commissioningStage_SendNOC = "SendNOC"
+    const val commissioningStage_WiFiNetworkSetup = "WiFiNetworkSetup"
+    const val commissioningStage_WiFiNetworkEnable = "WiFiNetworkEnable"
     const val commissioningStage_ThreadNetworkSetup = "ThreadNetworkSetup"
     const val commissioningStage_UnpoweredPhaseComplete = "UnpoweredPhaseComplete"
     const val commissioningStage_FindOperationalForStayActive = "FindOperationalForStayActive"
@@ -750,6 +781,10 @@ class DeviceProvisioningFragment : Fragment(), ServiceResolveListener {
 
   override fun onServiceResolve(instanceName : String, serviceType : String) {
     Log.d(TAG, "DeviceProvisioning: onServiceResolve: " + instanceName + "." + serviceType)
+    if (!isAdded || activity == null) {
+      return
+    }
+
     if (currentNfcCommissioningStage == commissioningStage_FindOperationalForStayActive) {
       operationalDiscoveryDone = true
       displayNfcCommissioningProgress(currentNfcCommissioningStage);

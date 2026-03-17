@@ -115,7 +115,7 @@ object ChipClient {
     return androidPlatform
   }
 
-  fun setServiceResolveListener(listener: ServiceResolveListener) {
+  fun setServiceResolveListener(listener: ServiceResolveListener?) {
     if (this::androidPlatform.isInitialized) {
       androidPlatform.setServiceResolveListener(listener)
     }
