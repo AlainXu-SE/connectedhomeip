@@ -42,6 +42,8 @@ enum OperationalCSRInfoId : uint32_t
     kVendorReserved1 = 3,
     kVendorReserved2 = 4,
     kVendorReserved3 = 5,
+    kVendorReserved4 = 6,
+    kVendorReserved5 = 7,
 };
 
 // utility to determine number of Vendor Reserved elements in a bytespan
@@ -287,6 +289,10 @@ CHIP_ERROR DeconstructNOCSRElements(const ByteSpan & nocsrElements, ByteSpan & c
             break;
         case kVendorReserved3:
             ReturnErrorOnFailure(tlvReader.Get(vendor_reserved3));
+            break;
+        case kVendorReserved4:
+            break;
+        case kVendorReserved5:
             break;
         default:
             // unrecognized TLV element
