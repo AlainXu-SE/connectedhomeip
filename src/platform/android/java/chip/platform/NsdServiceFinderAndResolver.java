@@ -32,8 +32,6 @@ import java.util.concurrent.TimeUnit;
 class NsdServiceFinderAndResolver implements NsdManager.DiscoveryListener {
   private static final String TAG = NsdServiceFinderAndResolver.class.getSimpleName();
 
-  private static final long BROWSE_SERVICE_TIMEOUT_MS = 5000L;
-
   private final NsdManager nsdManager;
   private final NsdServiceInfo targetServiceInfo;
   private final long callbackHandle;
@@ -41,6 +39,7 @@ class NsdServiceFinderAndResolver implements NsdManager.DiscoveryListener {
   private final ChipMdnsCallback chipMdnsCallback;
   private final MulticastLock multicastLock;
   private final ScheduledFuture<?> resolveTimeoutExecutor;
+  private final long browseTimeoutMs;
   private NsdServiceInfo discoveredServiceInfo = null;
 
   @Nullable
@@ -55,6 +54,7 @@ class NsdServiceFinderAndResolver implements NsdManager.DiscoveryListener {
       final long contextHandle,
       final ChipMdnsCallback chipMdnsCallback,
       final MulticastLock multicastLock,
+      final long browseTimeoutMs,
       final ScheduledFuture<?> resolveTimeoutExecutor,
       final NsdManagerServiceResolver.NsdManagerResolverAvailState nsdManagerResolverAvailState) {
     this.nsdManager = nsdManager;
@@ -63,6 +63,7 @@ class NsdServiceFinderAndResolver implements NsdManager.DiscoveryListener {
     this.contextHandle = contextHandle;
     this.chipMdnsCallback = chipMdnsCallback;
     this.multicastLock = multicastLock;
+    this.browseTimeoutMs = browseTimeoutMs;
     this.resolveTimeoutExecutor = resolveTimeoutExecutor;
     this.nsdManagerResolverAvailState = nsdManagerResolverAvailState;
   }
@@ -79,14 +80,14 @@ class NsdServiceFinderAndResolver implements NsdManager.DiscoveryListener {
                   public void run() {
                     Log.d(
                         TAG,
-                        "Service discovery timed out after " + BROWSE_SERVICE_TIMEOUT_MS + " ms");
+                        "Service discovery timed out after " + browseTimeoutMs + " ms");
                     nsdManager.stopServiceDiscovery(serviceFinderResolver);
                     if (multicastLock.isHeld()) {
                       multicastLock.release();
                     }
                   }
                 },
-                BROWSE_SERVICE_TIMEOUT_MS,
+                browseTimeoutMs,
                 TimeUnit.MILLISECONDS);
 
     this.nsdManager.discoverServices(

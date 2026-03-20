@@ -139,6 +139,7 @@ public class NsdManagerServiceResolver implements ServiceResolver {
                   contextHandle,
                   chipMdnsCallback,
                   multicastLock,
+                  timeout,
                   resolveTimeoutExecutor,
                   nsdManagerResolverAvailState);
           serviceFinderResolver.start();
