@@ -17,7 +17,10 @@
  */
 package com.google.chip.chiptool.provisioning
 
+import android.content.Context
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -33,6 +36,8 @@ import com.google.chip.chiptool.util.FragmentUtil
  * Fragment to collect Wi-Fi network information from user and send it to device being provisioned.
  */
 class EnterNetworkFragment : Fragment() {
+  private var isUpdatingWiFiFields = false
+
   private val networkType: ProvisionNetworkType
     get() =
       requireNotNull(
@@ -55,6 +60,16 @@ class EnterNetworkFragment : Fragment() {
       }
 
     return inflater.inflate(layoutRes, container, false).apply {
+      if (networkType == ProvisionNetworkType.WIFI) {
+        val ssidEd: EditText = findViewById(R.id.ssidEd)
+        val pwdEd: EditText = findViewById(R.id.pwdEd)
+
+        restoreSavedWiFiCredentials(ssidEd, pwdEd)
+        attachWhitespaceSanitizer(ssidEd)
+        attachWhitespaceSanitizer(pwdEd)
+        attachSavedWiFiClearListener(ssidEd, pwdEd)
+      }
+
       val saveNetworkBtn: Button = findViewById(R.id.saveNetworkBtn)
       saveNetworkBtn.setOnClickListener { onSaveNetworkClicked(this) }
     }
@@ -71,8 +86,16 @@ class EnterNetworkFragment : Fragment() {
   private fun saveWiFiNetwork(view: View) {
     val ssidEd: EditText = view.findViewById(R.id.ssidEd)
     val pwdEd: EditText = view.findViewById(R.id.pwdEd)
-    val ssid = ssidEd?.text
-    val pwd = pwdEd?.text
+    val ssid = ssidEd.text?.toString()?.filterNot { it.isWhitespace() }
+    val pwd = pwdEd.text?.toString()?.filterNot { it.isWhitespace() }
+
+    if (ssidEd.text.toString() != ssid) {
+      updateWiFiField(ssidEd, ssid.orEmpty())
+    }
+
+    if (pwdEd.text.toString() != pwd) {
+      updateWiFiField(pwdEd, pwd.orEmpty())
+    }
 
     if (ssid.isNullOrBlank() || pwd.isNullOrBlank()) {
       Toast.makeText(requireContext(), "Ssid and password required.", Toast.LENGTH_SHORT).show()
@@ -81,10 +104,97 @@ class EnterNetworkFragment : Fragment() {
 
     val networkCredentials =
       NetworkCredentialsParcelable.forWiFi(
-        NetworkCredentialsParcelable.WiFiCredentials(ssid.toString(), pwd.toString())
+        NetworkCredentialsParcelable.WiFiCredentials(ssid, pwd)
       )
+    persistWiFiCredentials(ssid, pwd)
     FragmentUtil.getHost(this, Callback::class.java)
       ?.onNetworkCredentialsEntered(networkCredentials)
+  }
+
+  private fun restoreSavedWiFiCredentials(ssidEd: EditText, pwdEd: EditText) {
+    val prefs = getPrefs()
+    val savedSsid = prefs.getString(WIFI_SSID_PREFS_KEY, null)
+    val savedPassword = prefs.getString(WIFI_PASSWORD_PREFS_KEY, null)
+
+    if (savedSsid != null) {
+      updateWiFiField(ssidEd, savedSsid)
+    }
+
+    if (savedPassword != null) {
+      updateWiFiField(pwdEd, savedPassword)
+    }
+  }
+
+  private fun persistWiFiCredentials(ssid: String, password: String) {
+    getPrefs()
+      .edit()
+      .putString(WIFI_SSID_PREFS_KEY, ssid)
+      .putString(WIFI_PASSWORD_PREFS_KEY, password)
+      .apply()
+  }
+
+  private fun clearSavedWiFiCredentials() {
+    getPrefs()
+      .edit()
+      .remove(WIFI_SSID_PREFS_KEY)
+      .remove(WIFI_PASSWORD_PREFS_KEY)
+      .apply()
+  }
+
+  private fun updateWiFiField(editText: EditText, value: String) {
+    isUpdatingWiFiFields = true
+    editText.setText(value)
+    editText.setSelection(value.length)
+    isUpdatingWiFiFields = false
+  }
+
+  private fun attachWhitespaceSanitizer(editText: EditText) {
+    editText.addTextChangedListener(
+      object : TextWatcher {
+        private var isSanitizing = false
+
+        override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+
+        override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+
+        override fun afterTextChanged(s: Editable?) {
+          if (isSanitizing || isUpdatingWiFiFields || s == null) {
+            return
+          }
+
+          val sanitized = s.toString().filterNot { it.isWhitespace() }
+          if (sanitized == s.toString()) {
+            return
+          }
+
+          isSanitizing = true
+          updateWiFiField(editText, sanitized)
+          isSanitizing = false
+        }
+      }
+    )
+  }
+
+  private fun attachSavedWiFiClearListener(ssidEd: EditText, pwdEd: EditText) {
+    val clearListener =
+      object : TextWatcher {
+        override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+
+        override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+
+        override fun afterTextChanged(s: Editable?) {
+          if (isUpdatingWiFiFields) {
+            return
+          }
+
+          if (ssidEd.text.isNullOrEmpty() && pwdEd.text.isNullOrEmpty()) {
+            clearSavedWiFiCredentials()
+          }
+        }
+      }
+
+    ssidEd.addTextChangedListener(clearListener)
+    pwdEd.addTextChangedListener(clearListener)
   }
 
   private fun saveThreadNetwork(view: View) {
@@ -178,10 +288,16 @@ class EnterNetworkFragment : Fragment() {
     return chunked(2).map { byteStr -> byteStr.toUByte(16).toByte() }.toByteArray()
   }
 
+  private fun getPrefs() =
+    requireContext().getSharedPreferences(PREFERENCE_FILE_KEY, Context.MODE_PRIVATE)
+
   companion object {
     private const val TAG = "EnterNetworkFragment"
     private const val ARG_PROVISION_NETWORK_TYPE = "provision_network_type"
     private const val NETWORK_COMMISSIONING_CLUSTER_ENDPOINT = 0
+    private const val PREFERENCE_FILE_KEY = "com.google.chip.chiptool.PREFERENCE_FILE_KEY"
+    private const val WIFI_SSID_PREFS_KEY = "wifi_ssid"
+    private const val WIFI_PASSWORD_PREFS_KEY = "wifi_password"
 
     private const val NUM_CHANNEL_BYTES = 3
     private const val NUM_PANID_BYTES = 2
