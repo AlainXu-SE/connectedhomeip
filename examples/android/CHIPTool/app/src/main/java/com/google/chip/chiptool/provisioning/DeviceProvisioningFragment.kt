@@ -85,6 +85,10 @@ class DeviceProvisioningFragment : Fragment(), ServiceResolveListener {
   private var operationalDiscoveryDone = false
   private var nfcUnpoweredPhaseCompleted = false
   private var nfcCommissioningCompleted = false
+  private var reportNfcCompletionOnClose = false
+  private var nfcCompletionNodeId: Long = 0
+  private var nfcCompletionErrorCode: Long = STATUS_PAIRING_SUCCESS
+  private var nfcFailureToastShown = false
 
 
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -102,6 +106,11 @@ class DeviceProvisioningFragment : Fragment(), ServiceResolveListener {
 
     return inflater.inflate(R.layout.barcode_fragment, container, false).apply {
       if (savedInstanceState == null) {
+        if (isAnyDeviceWaitingForPowerOn()) {
+          Log.i(TAG, "Skipping NFC/BLE commissioning start while waiting for device power on")
+          return@apply
+        }
+
         if (deviceInfo.ipAddress != null) {
           pairDeviceWithAddress()
         } else {
@@ -124,13 +133,30 @@ class DeviceProvisioningFragment : Fragment(), ServiceResolveListener {
     dialog?.dismiss()
     dialog = null
     dismissNfcCommissioningPopup()
-    ChipClient.setServiceResolveListener(null)
+    if (!isWaitingForDevicePowerOn()) {
+      ChipClient.setServiceResolveListener(null)
+    } else {
+      Log.i(TAG, "Lifecycle stop while waiting for device power on; popup will be restored on resume")
+    }
   }
 
   override fun onDestroy() {
     super.onDestroy()
-    deviceController.close()
-    deviceController.setDeviceAttestationDelegate(0, EmptyAttestationDelegate())
+    dismissNfcCommissioningPopup()
+    if (!isAnyDeviceWaitingForPowerOn()) {
+      ChipClient.setServiceResolveListener(null)
+      deviceController.close()
+      deviceController.setDeviceAttestationDelegate(0, EmptyAttestationDelegate())
+    }
+  }
+
+  override fun onResume() {
+    super.onResume()
+
+    if (isAnyDeviceWaitingForPowerOn() && nfcCommissioningAlertDialog?.isShowing != true) {
+      Log.i(TAG, "Restoring NFC waiting-for-power-on popup after lifecycle transition")
+      restoreNfcWaitingForPowerOnPopup()
+    }
   }
 
   private class EmptyAttestationDelegate : DeviceAttestationDelegate {
@@ -352,9 +378,29 @@ class DeviceProvisioningFragment : Fragment(), ServiceResolveListener {
           return
         }
 
+        setWaitingForDevicePowerOn(false)
+
+        if (isNfcCommissioningPopupVisible()) {
+          setNfcTerminalResult(nodeId, STATUS_PAIRING_SUCCESS)
+          displayCommissioningCompleteStage()
+          return
+        }
+
         FragmentUtil.getHost(this@DeviceProvisioningFragment, Callback::class.java)
           ?.onCommissioningComplete(0L, nodeId)
       } else {
+        setWaitingForDevicePowerOn(false)
+        if (shouldTreatNfcFailureAsCompletedSuccess()) {
+          showRetainedFailureToastOnce()
+          setNfcTerminalResult(nodeId, STATUS_PAIRING_SUCCESS)
+          displayCommissioningCompleteStage()
+          return
+        }
+        if (isNfcCommissioningPopupVisible()) {
+          setNfcTerminalResult(nodeId, errorCode)
+          displayCommissioningFailedStage()
+          return
+        }
         showMessage(R.string.rendezvous_over_ble_pairing_failure_text)
         FragmentUtil.getHost(this@DeviceProvisioningFragment, Callback::class.java)
           ?.onCommissioningComplete(errorCode)
@@ -365,6 +411,17 @@ class DeviceProvisioningFragment : Fragment(), ServiceResolveListener {
       Log.d(TAG, "onPairingComplete: $code")
 
       if (code != STATUS_PAIRING_SUCCESS) {
+        if (shouldTreatNfcFailureAsCompletedSuccess()) {
+          showRetainedFailureToastOnce()
+          setNfcTerminalResult(0L, STATUS_PAIRING_SUCCESS)
+          displayCommissioningCompleteStage()
+          return
+        }
+        if (isNfcCommissioningPopupVisible()) {
+          setNfcTerminalResult(0L, code)
+          displayCommissioningFailedStage()
+          return
+        }
         showMessage(R.string.rendezvous_over_ble_pairing_failure_text)
         FragmentUtil.getHost(this@DeviceProvisioningFragment, Callback::class.java)
           ?.onCommissioningComplete(code)
@@ -429,6 +486,10 @@ class DeviceProvisioningFragment : Fragment(), ServiceResolveListener {
 
 
   fun displayNfcCommissioningPopup() {
+    showNfcCommissioningPopup(resetState = true)
+  }
+
+  private fun showNfcCommissioningPopup(resetState: Boolean, restoreStage: String? = null) {
 
     val activity = activity ?: return
     activity.runOnUiThread(java.lang.Runnable {
@@ -449,6 +510,16 @@ class DeviceProvisioningFragment : Fragment(), ServiceResolveListener {
         .setNegativeButton(
           "Close"
         ) { dialog, id ->
+          if (reportNfcCompletionOnClose) {
+            val completionErrorCode = nfcCompletionErrorCode
+            val completionNodeId = nfcCompletionNodeId
+            dismissNfcCommissioningPopup()
+            FragmentUtil.getHost(this@DeviceProvisioningFragment, Callback::class.java)
+              ?.onCommissioningComplete(completionErrorCode, completionNodeId)
+            dialog.cancel()
+            return@setNegativeButton
+          }
+
           if (deviceController != null) {
             try {
               if (!nfcCommissioningCompleted) {
@@ -469,8 +540,14 @@ class DeviceProvisioningFragment : Fragment(), ServiceResolveListener {
       val alertDialog = alertDialogBuilder.create()
       nfcCommissioningAlertDialog = alertDialog
 
-      nfcCommissioningCompleted = false
-      nfcUnpoweredPhaseCompleted = false
+      if (resetState) {
+        nfcCommissioningCompleted = false
+        nfcUnpoweredPhaseCompleted = false
+        reportNfcCompletionOnClose = false
+        nfcCompletionNodeId = 0
+        nfcCompletionErrorCode = STATUS_PAIRING_SUCCESS
+        nfcFailureToastShown = false
+      }
       displayInitialStage()
 
       ChipClient.setServiceResolveListener(this)
@@ -480,7 +557,20 @@ class DeviceProvisioningFragment : Fragment(), ServiceResolveListener {
       alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE).setTextColor(
         resources.getColor(R.color.light_blue)
       )
+
+      if (restoreStage != null) {
+        displayNfcCommissioningProgress(restoreStage)
+      }
     })
+  }
+
+  private fun restoreNfcWaitingForPowerOnPopup() {
+    nfcCommissioningCompleted = false
+    nfcUnpoweredPhaseCompleted = true
+    showNfcCommissioningPopup(
+      resetState = false,
+      restoreStage = commissioningStage_UnpoweredPhaseComplete
+    )
   }
 
   private fun setAnimatedImageView(imageView: ImageView?) {
@@ -525,6 +615,14 @@ class DeviceProvisioningFragment : Fragment(), ServiceResolveListener {
     }
 
     currentNfcCommissioningStage = stage;
+
+    // This stage is immediately followed by a success completion callback for NFC unpowered
+    // commissioning. Mark it synchronously here so the completion callback does not race ahead
+    // of the UI-thread update and close the popup as if commissioning were fully done.
+    if (currentNfcCommissioningStage == commissioningStage_UnpoweredPhaseComplete) {
+      nfcUnpoweredPhaseCompleted = true
+      setWaitingForDevicePowerOn(true)
+    }
 
     when (currentNfcCommissioningStage) {
       commissioningStage_SendDACCertificateRequest -> {
@@ -712,6 +810,21 @@ class DeviceProvisioningFragment : Fragment(), ServiceResolveListener {
       if (nfcCommissioningAlertDialogView != null) {
         val commissioningDoneTextView = nfcCommissioningAlertDialogView!!.findViewById<TextView>(R.id.commissioningDoneTextView)
         setAnimatedImageView(null);
+        commissioningDoneTextView.text = getString(R.string.device_commissioned_successfully)
+        commissioningDoneTextView.setTextColor(resources.getColor(R.color.dark_blue))
+        commissioningDoneTextView.setTypeface(Typeface.DEFAULT_BOLD)
+        nfcCommissioningCompleted = true
+      }
+    })
+  }
+
+  private fun displayCommissioningFailedStage() {
+    requireActivity().runOnUiThread(java.lang.Runnable {
+      if (nfcCommissioningAlertDialogView != null) {
+        val commissioningDoneTextView =
+          nfcCommissioningAlertDialogView!!.findViewById<TextView>(R.id.commissioningDoneTextView)
+        setAnimatedImageView(null)
+        commissioningDoneTextView.text = getString(R.string.rendezvous_over_ble_pairing_failure_text)
         commissioningDoneTextView.setTextColor(resources.getColor(R.color.dark_blue))
         commissioningDoneTextView.setTypeface(Typeface.DEFAULT_BOLD)
         nfcCommissioningCompleted = true
@@ -722,6 +835,7 @@ class DeviceProvisioningFragment : Fragment(), ServiceResolveListener {
   private fun continueCommissioningAfterConnectNetworkRequest() {
     operationalDiscoveryDone = false
     nfcUnpoweredPhaseCompleted = false
+    setWaitingForDevicePowerOn(false)
 
     val chipDeviceController = ChipClient.getDeviceController(requireActivity())
 
@@ -733,6 +847,37 @@ class DeviceProvisioningFragment : Fragment(), ServiceResolveListener {
     nfcCommissioningAlertDialog = null
     nfcCommissioningAlertDialogView = null
     animatedImageView = null
+  }
+
+  private fun setNfcTerminalResult(nodeId: Long, errorCode: Long) {
+    reportNfcCompletionOnClose = true
+    nfcCompletionNodeId = nodeId
+    nfcCompletionErrorCode = errorCode
+  }
+
+  private fun showRetainedFailureToastOnce() {
+    if (nfcFailureToastShown) {
+      return
+    }
+
+    nfcFailureToastShown = true
+    showMessage(R.string.rendezvous_over_ble_pairing_failure_text)
+  }
+
+  private fun shouldTreatNfcFailureAsCompletedSuccess(): Boolean {
+    return isNfcCommissioningPopupVisible() &&
+      nfcCommissioningCompleted &&
+      (currentNfcCommissioningStage == commissioningStage_SendComplete ||
+        currentNfcCommissioningStage == commissioningStage_Cleanup)
+  }
+
+  fun isWaitingForDevicePowerOn(): Boolean {
+    return nfcUnpoweredPhaseCompleted &&
+      !nfcCommissioningCompleted
+  }
+
+  fun isNfcCommissioningPopupVisible(): Boolean {
+    return nfcCommissioningAlertDialog?.isShowing == true
   }
 
 
@@ -760,6 +905,17 @@ class DeviceProvisioningFragment : Fragment(), ServiceResolveListener {
      * This time depends on the Commissioning timeout of your app.
      */
     private const val DEVICE_ATTESTATION_FAILED_TIMEOUT = 600
+
+    @Volatile private var waitingForDevicePowerOn = false
+
+    fun isAnyDeviceWaitingForPowerOn(): Boolean {
+      return waitingForDevicePowerOn
+    }
+
+    fun setWaitingForDevicePowerOn(waiting: Boolean) {
+      Log.i(TAG, "Set waitingForDevicePowerOn=$waiting")
+      waitingForDevicePowerOn = waiting
+    }
 
     /**
      * Return a new instance of [DeviceProvisioningFragment]. [networkCredentialsParcelable] can be

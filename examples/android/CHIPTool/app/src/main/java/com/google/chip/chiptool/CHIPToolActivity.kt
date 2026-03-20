@@ -57,6 +57,13 @@ class CHIPToolActivity :
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+
+    if (shouldFinishDuplicateNfcLaunch(intent)) {
+      Log.i(TAG, "Finishing duplicate NFC launch while waiting for device power on")
+      finish()
+      return
+    }
+
     setContentView(R.layout.top_activity)
 
     if (savedInstanceState == null) {
@@ -70,11 +77,13 @@ class CHIPToolActivity :
         ProvisionNetworkType.fromName(savedInstanceState.getString(ARG_PROVISION_NETWORK_TYPE))
     }
 
-    if (intent?.action == NfcAdapter.ACTION_NDEF_DISCOVERED) onNfcIntent(intent)
+    handleIntent(intent)
+  }
 
-    if (Intent.ACTION_VIEW == intent?.action) {
-      onReturnIntent(intent)
-    }
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    handleIntent(intent)
   }
 
   override fun onSaveInstanceState(outState: Bundle) {
@@ -138,6 +147,45 @@ class CHIPToolActivity :
     }
 
     fragmentTransaction.commit()
+  }
+
+  private fun handleIntent(intent: Intent?) {
+    if (intent?.action == NfcAdapter.ACTION_NDEF_DISCOVERED) {
+      if (shouldIgnoreNfcIntent(intent)) {
+        Log.i(TAG, "Ignoring duplicate NFC intent while waiting for device power on")
+        return
+      }
+
+      onNfcIntent(intent)
+    }
+
+    if (Intent.ACTION_VIEW == intent?.action) {
+      onReturnIntent(intent)
+    }
+  }
+
+  private fun shouldIgnoreNfcIntent(intent: Intent?): Boolean {
+    if (DeviceProvisioningFragment.isAnyDeviceWaitingForPowerOn()) {
+      return true
+    }
+
+    val currentFragment = supportFragmentManager.findFragmentById(R.id.nav_host_fragment)
+    val provisioningFragment = currentFragment as? DeviceProvisioningFragment ?: return false
+
+    return provisioningFragment.isWaitingForDevicePowerOn() ||
+      provisioningFragment.isNfcCommissioningPopupVisible()
+  }
+
+  private fun shouldFinishDuplicateNfcLaunch(intent: Intent?): Boolean {
+    if (intent?.action != NfcAdapter.ACTION_NDEF_DISCOVERED) {
+      return false
+    }
+
+    if (!DeviceProvisioningFragment.isAnyDeviceWaitingForPowerOn()) {
+      return false
+    }
+
+    return !isTaskRoot
   }
 
   private fun onNfcIntent(intent: Intent?) {
