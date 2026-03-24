@@ -54,7 +54,7 @@
             android:layout_marginHorizontal="16dp"
             android:text="@string/enter_thread_panid_text"
             android:inputType="textCapCharacters"
-            android:digits="0123456789ABCDEF"
+            android:digits="0123456789ABCDEFabcdef"
             android:maxLength="4"
             android:textSize="20sp" />
 
@@ -76,7 +76,7 @@
             android:layout_marginHorizontal="16dp"
             android:text="@string/enter_thread_xpanid_text"
             android:inputType="textCapCharacters"
-            android:digits="0123456789ABCDEF:"
+            android:digits="0123456789ABCDEFabcdef:"
             android:maxLength="24"
             android:textSize="20sp"
             />
@@ -99,7 +99,7 @@
             android:layout_marginHorizontal="16dp"
             android:text="@string/enter_thread_master_key_text"
             android:inputType="textCapCharacters"
-            android:digits="0123456789ABCDEF:"
+            android:digits="0123456789ABCDEFabcdef:"
             android:maxLength="48"
             android:textSize="20sp"
             />

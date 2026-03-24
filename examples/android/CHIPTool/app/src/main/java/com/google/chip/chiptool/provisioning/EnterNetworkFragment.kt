@@ -31,12 +31,13 @@ import androidx.fragment.app.Fragment
 import com.google.chip.chiptool.NetworkCredentialsParcelable
 import com.google.chip.chiptool.R
 import com.google.chip.chiptool.util.FragmentUtil
+import java.util.Locale
 
 /**
  * Fragment to collect Wi-Fi network information from user and send it to device being provisioned.
  */
 class EnterNetworkFragment : Fragment() {
-  private var isUpdatingWiFiFields = false
+  private var isUpdatingFields = false
 
   private val networkType: ProvisionNetworkType
     get() =
@@ -68,6 +69,18 @@ class EnterNetworkFragment : Fragment() {
         attachWhitespaceSanitizer(ssidEd)
         attachWhitespaceSanitizer(pwdEd)
         attachSavedWiFiClearListener(ssidEd, pwdEd)
+      } else {
+        val channelEd: EditText = findViewById(R.id.channelEd)
+        val panIdEd: EditText = findViewById(R.id.panIdEd)
+        val xpanIdEd: EditText = findViewById(R.id.xpanIdEd)
+        val masterKeyEd: EditText = findViewById(R.id.masterKeyEd)
+
+        restoreSavedThreadCredentials(channelEd, panIdEd, xpanIdEd, masterKeyEd)
+        attachWhitespaceSanitizer(channelEd)
+        attachWhitespaceSanitizer(panIdEd)
+        attachWhitespaceSanitizer(xpanIdEd)
+        attachWhitespaceSanitizer(masterKeyEd)
+        attachSavedThreadClearListener(channelEd, panIdEd, xpanIdEd, masterKeyEd)
       }
 
       val saveNetworkBtn: Button = findViewById(R.id.saveNetworkBtn)
@@ -90,11 +103,11 @@ class EnterNetworkFragment : Fragment() {
     val pwd = pwdEd.text?.toString()?.filterNot { it.isWhitespace() }
 
     if (ssidEd.text.toString() != ssid) {
-      updateWiFiField(ssidEd, ssid.orEmpty())
+      updateField(ssidEd, ssid.orEmpty())
     }
 
     if (pwdEd.text.toString() != pwd) {
-      updateWiFiField(pwdEd, pwd.orEmpty())
+      updateField(pwdEd, pwd.orEmpty())
     }
 
     if (ssid.isNullOrBlank() || pwd.isNullOrBlank()) {
@@ -117,11 +130,11 @@ class EnterNetworkFragment : Fragment() {
     val savedPassword = prefs.getString(WIFI_PASSWORD_PREFS_KEY, null)
 
     if (savedSsid != null) {
-      updateWiFiField(ssidEd, savedSsid)
+      updateField(ssidEd, savedSsid)
     }
 
     if (savedPassword != null) {
-      updateWiFiField(pwdEd, savedPassword)
+      updateField(pwdEd, savedPassword)
     }
   }
 
@@ -141,11 +154,65 @@ class EnterNetworkFragment : Fragment() {
       .apply()
   }
 
-  private fun updateWiFiField(editText: EditText, value: String) {
-    isUpdatingWiFiFields = true
+  private fun restoreSavedThreadCredentials(
+    channelEd: EditText,
+    panIdEd: EditText,
+    xpanIdEd: EditText,
+    masterKeyEd: EditText
+  ) {
+    val prefs = getPrefs()
+    val savedChannel = prefs.getString(THREAD_CHANNEL_PREFS_KEY, null)
+    val savedPanId = prefs.getString(THREAD_PAN_ID_PREFS_KEY, null)
+    val savedXpanId = prefs.getString(THREAD_XPAN_ID_PREFS_KEY, null)
+    val savedMasterKey = prefs.getString(THREAD_MASTER_KEY_PREFS_KEY, null)
+
+    if (savedChannel != null) {
+      updateField(channelEd, savedChannel)
+    }
+
+    if (savedPanId != null) {
+      updateField(panIdEd, savedPanId)
+    }
+
+    if (savedXpanId != null) {
+      updateField(xpanIdEd, savedXpanId)
+    }
+
+    if (savedMasterKey != null) {
+      updateField(masterKeyEd, savedMasterKey)
+    }
+  }
+
+  private fun persistThreadCredentials(
+    channel: String,
+    panId: String,
+    xpanId: String,
+    masterKey: String
+  ) {
+    getPrefs()
+      .edit()
+      .putString(THREAD_CHANNEL_PREFS_KEY, channel)
+      .putString(THREAD_PAN_ID_PREFS_KEY, panId)
+      .putString(THREAD_XPAN_ID_PREFS_KEY, xpanId)
+      .putString(THREAD_MASTER_KEY_PREFS_KEY, masterKey)
+      .apply()
+  }
+
+  private fun clearSavedThreadCredentials() {
+    getPrefs()
+      .edit()
+      .remove(THREAD_CHANNEL_PREFS_KEY)
+      .remove(THREAD_PAN_ID_PREFS_KEY)
+      .remove(THREAD_XPAN_ID_PREFS_KEY)
+      .remove(THREAD_MASTER_KEY_PREFS_KEY)
+      .apply()
+  }
+
+  private fun updateField(editText: EditText, value: String) {
+    isUpdatingFields = true
     editText.setText(value)
     editText.setSelection(value.length)
-    isUpdatingWiFiFields = false
+    isUpdatingFields = false
   }
 
   private fun attachWhitespaceSanitizer(editText: EditText) {
@@ -158,7 +225,7 @@ class EnterNetworkFragment : Fragment() {
         override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
 
         override fun afterTextChanged(s: Editable?) {
-          if (isSanitizing || isUpdatingWiFiFields || s == null) {
+          if (isSanitizing || isUpdatingFields || s == null) {
             return
           }
 
@@ -168,7 +235,7 @@ class EnterNetworkFragment : Fragment() {
           }
 
           isSanitizing = true
-          updateWiFiField(editText, sanitized)
+          updateField(editText, sanitized)
           isSanitizing = false
         }
       }
@@ -183,7 +250,7 @@ class EnterNetworkFragment : Fragment() {
         override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
 
         override fun afterTextChanged(s: Editable?) {
-          if (isUpdatingWiFiFields) {
+          if (isUpdatingFields) {
             return
           }
 
@@ -197,13 +264,68 @@ class EnterNetworkFragment : Fragment() {
     pwdEd.addTextChangedListener(clearListener)
   }
 
+  private fun attachSavedThreadClearListener(
+    channelEd: EditText,
+    panIdEd: EditText,
+    xpanIdEd: EditText,
+    masterKeyEd: EditText
+  ) {
+    val clearListener =
+      object : TextWatcher {
+        override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+
+        override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+
+        override fun afterTextChanged(s: Editable?) {
+          if (isUpdatingFields) {
+            return
+          }
+
+          if (
+            channelEd.text.isNullOrEmpty() &&
+              panIdEd.text.isNullOrEmpty() &&
+              xpanIdEd.text.isNullOrEmpty() &&
+              masterKeyEd.text.isNullOrEmpty()
+          ) {
+            clearSavedThreadCredentials()
+          }
+        }
+      }
+
+    channelEd.addTextChangedListener(clearListener)
+    panIdEd.addTextChangedListener(clearListener)
+    xpanIdEd.addTextChangedListener(clearListener)
+    masterKeyEd.addTextChangedListener(clearListener)
+  }
+
   private fun saveThreadNetwork(view: View) {
     val channelEd: EditText = view.findViewById(R.id.channelEd)
     val panIdEd: EditText = view.findViewById(R.id.panIdEd)
     val xpanIdEd: EditText = view.findViewById(R.id.xpanIdEd)
     val masterKeyEd: EditText = view.findViewById(R.id.masterKeyEd)
-    val channelStr = channelEd.text
-    val panIdStr = panIdEd.text
+    val channelStr = channelEd.text?.toString()?.filterNot { it.isWhitespace() }
+    val panIdStr =
+      panIdEd.text?.toString()?.filterNot { it.isWhitespace() }?.uppercase(Locale.US)
+    val xpanIdInput =
+      xpanIdEd.text?.toString()?.filterNot { it.isWhitespace() }?.uppercase(Locale.US)
+    val masterKeyInput =
+      masterKeyEd.text?.toString()?.filterNot { it.isWhitespace() }?.uppercase(Locale.US)
+
+    if (channelEd.text.toString() != channelStr) {
+      updateField(channelEd, channelStr.orEmpty())
+    }
+
+    if (panIdEd.text.toString() != panIdStr) {
+      updateField(panIdEd, panIdStr.orEmpty())
+    }
+
+    if (xpanIdEd.text.toString() != xpanIdInput) {
+      updateField(xpanIdEd, xpanIdInput.orEmpty())
+    }
+
+    if (masterKeyEd.text.toString() != masterKeyInput) {
+      updateField(masterKeyEd, masterKeyInput.orEmpty())
+    }
 
     if (channelStr.isNullOrBlank()) {
       Toast.makeText(requireContext(), "Channel is empty", Toast.LENGTH_SHORT).show()
@@ -215,23 +337,23 @@ class EnterNetworkFragment : Fragment() {
       return
     }
 
-    if (xpanIdEd.text.isNullOrBlank()) {
+    if (xpanIdInput.isNullOrBlank()) {
       Toast.makeText(requireContext(), "XPAN ID is empty", Toast.LENGTH_SHORT).show()
       return
     }
 
-    val xpanIdStr = xpanIdEd.text.toString().filterNot { c -> c == ':' }
+    val xpanIdStr = xpanIdInput.filterNot { c -> c == ':' }
     if (xpanIdStr.length != NUM_XPANID_BYTES * 2) {
       Toast.makeText(requireContext(), "Extended PAN ID is invalid", Toast.LENGTH_SHORT).show()
       return
     }
 
-    if (masterKeyEd.text.isNullOrBlank()) {
+    if (masterKeyInput.isNullOrBlank()) {
       Toast.makeText(requireContext(), "Master Key is empty", Toast.LENGTH_SHORT).show()
       return
     }
 
-    val masterKeyStr = masterKeyEd.text.toString().filterNot { c -> c == ':' }
+    val masterKeyStr = masterKeyInput.filterNot { c -> c == ':' }
     if (masterKeyStr.length != NUM_MASTER_KEY_BYTES * 2) {
       Toast.makeText(requireContext(), "Master key is invalid", Toast.LENGTH_SHORT).show()
       return
@@ -249,6 +371,12 @@ class EnterNetworkFragment : Fragment() {
       NetworkCredentialsParcelable.forThread(
         NetworkCredentialsParcelable.ThreadCredentials(operationalDataset)
       )
+    persistThreadCredentials(
+      channelStr,
+      panIdStr,
+      xpanIdInput,
+      masterKeyInput
+    )
     FragmentUtil.getHost(this, Callback::class.java)
       ?.onNetworkCredentialsEntered(networkCredentials)
   }
@@ -298,6 +426,10 @@ class EnterNetworkFragment : Fragment() {
     private const val PREFERENCE_FILE_KEY = "com.google.chip.chiptool.PREFERENCE_FILE_KEY"
     private const val WIFI_SSID_PREFS_KEY = "wifi_ssid"
     private const val WIFI_PASSWORD_PREFS_KEY = "wifi_password"
+    private const val THREAD_CHANNEL_PREFS_KEY = "thread_channel"
+    private const val THREAD_PAN_ID_PREFS_KEY = "thread_pan_id"
+    private const val THREAD_XPAN_ID_PREFS_KEY = "thread_xpan_id"
+    private const val THREAD_MASTER_KEY_PREFS_KEY = "thread_master_key"
 
     private const val NUM_CHANNEL_BYTES = 3
     private const val NUM_PANID_BYTES = 2
