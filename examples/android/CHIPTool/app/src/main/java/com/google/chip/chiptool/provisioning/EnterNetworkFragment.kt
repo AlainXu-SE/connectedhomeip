@@ -74,13 +74,30 @@ class EnterNetworkFragment : Fragment() {
         val panIdEd: EditText = findViewById(R.id.panIdEd)
         val xpanIdEd: EditText = findViewById(R.id.xpanIdEd)
         val masterKeyEd: EditText = findViewById(R.id.masterKeyEd)
+        val networkNameEd: EditText = findViewById(R.id.networkNameEd)
+        val fullDatasetEd: EditText = findViewById(R.id.fullDatasetEd)
 
-        restoreSavedThreadCredentials(channelEd, panIdEd, xpanIdEd, masterKeyEd)
+        restoreSavedThreadCredentials(
+          channelEd,
+          panIdEd,
+          xpanIdEd,
+          masterKeyEd,
+          networkNameEd,
+          fullDatasetEd
+        )
         attachWhitespaceSanitizer(channelEd)
         attachWhitespaceSanitizer(panIdEd)
         attachWhitespaceSanitizer(xpanIdEd)
         attachWhitespaceSanitizer(masterKeyEd)
-        attachSavedThreadClearListener(channelEd, panIdEd, xpanIdEd, masterKeyEd)
+        attachWhitespaceSanitizer(fullDatasetEd)
+        attachSavedThreadClearListener(
+          channelEd,
+          panIdEd,
+          xpanIdEd,
+          masterKeyEd,
+          networkNameEd,
+          fullDatasetEd
+        )
       }
 
       val saveNetworkBtn: Button = findViewById(R.id.saveNetworkBtn)
@@ -158,13 +175,17 @@ class EnterNetworkFragment : Fragment() {
     channelEd: EditText,
     panIdEd: EditText,
     xpanIdEd: EditText,
-    masterKeyEd: EditText
+    masterKeyEd: EditText,
+    networkNameEd: EditText,
+    fullDatasetEd: EditText
   ) {
     val prefs = getPrefs()
     val savedChannel = prefs.getString(THREAD_CHANNEL_PREFS_KEY, null)
     val savedPanId = prefs.getString(THREAD_PAN_ID_PREFS_KEY, null)
     val savedXpanId = prefs.getString(THREAD_XPAN_ID_PREFS_KEY, null)
     val savedMasterKey = prefs.getString(THREAD_MASTER_KEY_PREFS_KEY, null)
+    val savedNetworkName = prefs.getString(THREAD_NETWORK_NAME_PREFS_KEY, null)
+    val savedFullDataset = prefs.getString(THREAD_FULL_DATASET_PREFS_KEY, null)
 
     if (savedChannel != null) {
       updateField(channelEd, savedChannel)
@@ -181,13 +202,23 @@ class EnterNetworkFragment : Fragment() {
     if (savedMasterKey != null) {
       updateField(masterKeyEd, savedMasterKey)
     }
+
+    if (savedNetworkName != null) {
+      updateField(networkNameEd, savedNetworkName)
+    }
+
+    if (savedFullDataset != null) {
+      updateField(fullDatasetEd, savedFullDataset)
+    }
   }
 
   private fun persistThreadCredentials(
     channel: String,
     panId: String,
     xpanId: String,
-    masterKey: String
+    masterKey: String,
+    networkName: String,
+    fullDataset: String?
   ) {
     getPrefs()
       .edit()
@@ -195,6 +226,8 @@ class EnterNetworkFragment : Fragment() {
       .putString(THREAD_PAN_ID_PREFS_KEY, panId)
       .putString(THREAD_XPAN_ID_PREFS_KEY, xpanId)
       .putString(THREAD_MASTER_KEY_PREFS_KEY, masterKey)
+      .putString(THREAD_NETWORK_NAME_PREFS_KEY, networkName)
+      .putString(THREAD_FULL_DATASET_PREFS_KEY, fullDataset)
       .apply()
   }
 
@@ -205,6 +238,8 @@ class EnterNetworkFragment : Fragment() {
       .remove(THREAD_PAN_ID_PREFS_KEY)
       .remove(THREAD_XPAN_ID_PREFS_KEY)
       .remove(THREAD_MASTER_KEY_PREFS_KEY)
+      .remove(THREAD_NETWORK_NAME_PREFS_KEY)
+      .remove(THREAD_FULL_DATASET_PREFS_KEY)
       .apply()
   }
 
@@ -268,7 +303,9 @@ class EnterNetworkFragment : Fragment() {
     channelEd: EditText,
     panIdEd: EditText,
     xpanIdEd: EditText,
-    masterKeyEd: EditText
+    masterKeyEd: EditText,
+    networkNameEd: EditText,
+    fullDatasetEd: EditText
   ) {
     val clearListener =
       object : TextWatcher {
@@ -285,7 +322,9 @@ class EnterNetworkFragment : Fragment() {
             channelEd.text.isNullOrEmpty() &&
               panIdEd.text.isNullOrEmpty() &&
               xpanIdEd.text.isNullOrEmpty() &&
-              masterKeyEd.text.isNullOrEmpty()
+              masterKeyEd.text.isNullOrEmpty() &&
+              networkNameEd.text.isNullOrEmpty() &&
+              fullDatasetEd.text.isNullOrEmpty()
           ) {
             clearSavedThreadCredentials()
           }
@@ -296,6 +335,8 @@ class EnterNetworkFragment : Fragment() {
     panIdEd.addTextChangedListener(clearListener)
     xpanIdEd.addTextChangedListener(clearListener)
     masterKeyEd.addTextChangedListener(clearListener)
+    networkNameEd.addTextChangedListener(clearListener)
+    fullDatasetEd.addTextChangedListener(clearListener)
   }
 
   private fun saveThreadNetwork(view: View) {
@@ -303,6 +344,8 @@ class EnterNetworkFragment : Fragment() {
     val panIdEd: EditText = view.findViewById(R.id.panIdEd)
     val xpanIdEd: EditText = view.findViewById(R.id.xpanIdEd)
     val masterKeyEd: EditText = view.findViewById(R.id.masterKeyEd)
+    val networkNameEd: EditText = view.findViewById(R.id.networkNameEd)
+    val fullDatasetEd: EditText = view.findViewById(R.id.fullDatasetEd)
     val channelStr = channelEd.text?.toString()?.filterNot { it.isWhitespace() }
     val panIdStr =
       panIdEd.text?.toString()?.filterNot { it.isWhitespace() }?.uppercase(Locale.US)
@@ -310,6 +353,9 @@ class EnterNetworkFragment : Fragment() {
       xpanIdEd.text?.toString()?.filterNot { it.isWhitespace() }?.uppercase(Locale.US)
     val masterKeyInput =
       masterKeyEd.text?.toString()?.filterNot { it.isWhitespace() }?.uppercase(Locale.US)
+    val networkName = networkNameEd.text?.toString()?.trim()
+    val fullDatasetInput =
+      fullDatasetEd.text?.toString()?.filterNot { it.isWhitespace() }?.uppercase(Locale.US)
 
     if (channelEd.text.toString() != channelStr) {
       updateField(channelEd, channelStr.orEmpty())
@@ -325,6 +371,40 @@ class EnterNetworkFragment : Fragment() {
 
     if (masterKeyEd.text.toString() != masterKeyInput) {
       updateField(masterKeyEd, masterKeyInput.orEmpty())
+    }
+
+    if (networkNameEd.text.toString() != networkName) {
+      updateField(networkNameEd, networkName.orEmpty())
+    }
+
+    if (fullDatasetEd.text.toString() != fullDatasetInput) {
+      updateField(fullDatasetEd, fullDatasetInput.orEmpty())
+    }
+
+    if (!fullDatasetInput.isNullOrBlank()) {
+      val normalizedDataset = fullDatasetInput.filterNot { c -> c == ':' }
+      val operationalDataset = tryParseHexBytes(normalizedDataset)
+
+      if (operationalDataset == null || normalizedDataset.length % 2 != 0) {
+        Toast.makeText(requireContext(), "Operational Dataset is invalid", Toast.LENGTH_SHORT).show()
+        return
+      }
+
+      val networkCredentials =
+        NetworkCredentialsParcelable.forThread(
+          NetworkCredentialsParcelable.ThreadCredentials(operationalDataset)
+        )
+      persistThreadCredentials(
+        channelStr.orEmpty(),
+        panIdStr.orEmpty(),
+        xpanIdInput.orEmpty(),
+        masterKeyInput.orEmpty(),
+        networkName.orEmpty(),
+        fullDatasetInput
+      )
+      FragmentUtil.getHost(this, Callback::class.java)
+        ?.onNetworkCredentialsEntered(networkCredentials)
+      return
     }
 
     if (channelStr.isNullOrBlank()) {
@@ -359,12 +439,23 @@ class EnterNetworkFragment : Fragment() {
       return
     }
 
+    if (networkName.isNullOrBlank()) {
+      Toast.makeText(requireContext(), "Network Name is empty", Toast.LENGTH_SHORT).show()
+      return
+    }
+
+    if (networkName.toByteArray().size > MAX_NETWORK_NAME_BYTES) {
+      Toast.makeText(requireContext(), "Network Name is invalid", Toast.LENGTH_SHORT).show()
+      return
+    }
+
     val operationalDataset =
       makeThreadOperationalDataset(
         channelStr.toString().toInt(),
         panIdStr.toString().toInt(16),
         xpanIdStr.hexToByteArray(),
-        masterKeyStr.hexToByteArray()
+        masterKeyStr.hexToByteArray(),
+        networkName
       )
 
     val networkCredentials =
@@ -375,7 +466,9 @@ class EnterNetworkFragment : Fragment() {
       channelStr,
       panIdStr,
       xpanIdInput,
-      masterKeyInput
+      masterKeyInput,
+      networkName,
+      null
     )
     FragmentUtil.getHost(this, Callback::class.java)
       ?.onNetworkCredentialsEntered(networkCredentials)
@@ -385,35 +478,65 @@ class EnterNetworkFragment : Fragment() {
     channel: Int,
     panId: Int,
     xpanId: ByteArray,
-    masterKey: ByteArray
+    masterKey: ByteArray,
+    networkName: String
   ): ByteArray {
-    // channel
-    var dataset = byteArrayOf(TYPE_CHANNEL.toByte(), NUM_CHANNEL_BYTES.toByte())
-    dataset += 0x00.toByte() // Channel Page 0.
-    dataset += (channel.shr(8) and 0xFF).toByte()
-    dataset += (channel and 0xFF).toByte()
-
-    // PAN ID
-    dataset += TYPE_PANID.toByte()
-    dataset += NUM_PANID_BYTES.toByte()
-    dataset += (panId.shr(8) and 0xFF).toByte()
-    dataset += (panId and 0xFF).toByte()
-
-    // Extended PAN ID
-    dataset += TYPE_XPANID.toByte()
-    dataset += NUM_XPANID_BYTES.toByte()
-    dataset += xpanId
-
-    // Network Master Key
-    dataset += TYPE_MASTER_KEY.toByte()
-    dataset += NUM_MASTER_KEY_BYTES.toByte()
-    dataset += masterKey
-
+    var dataset = byteArrayOf()
+    dataset += makeThreadTlv(TYPE_ACTIVE_TIMESTAMP, encodeActiveTimestamp())
+    dataset += makeThreadTlv(TYPE_CHANNEL, encodeThreadChannel(channel))
+    dataset += makeThreadTlv(TYPE_CHANNEL_MASK, DEFAULT_CHANNEL_MASK_PAGE_0)
+    dataset += makeThreadTlv(TYPE_XPANID, xpanId)
+    dataset += makeThreadTlv(TYPE_MASTER_KEY, masterKey)
+    dataset += makeThreadTlv(TYPE_NETWORK_NAME, networkName.toByteArray())
+    dataset += makeThreadTlv(TYPE_PANID, encodeUint16(panId))
+    dataset += makeThreadTlv(TYPE_SECURITY_POLICY, DEFAULT_SECURITY_POLICY)
     return dataset
+  }
+
+  private fun makeThreadTlv(type: Int, value: ByteArray): ByteArray {
+    require(value.size < 0xFF) { "Thread dataset TLV too large" }
+    return byteArrayOf(type.toByte(), value.size.toByte()) + value
+  }
+
+  private fun encodeThreadChannel(channel: Int): ByteArray {
+    return byteArrayOf(0x00, (channel.shr(8) and 0xFF).toByte(), (channel and 0xFF).toByte())
+  }
+
+  private fun encodeUint16(value: Int): ByteArray {
+    return byteArrayOf((value.shr(8) and 0xFF).toByte(), (value and 0xFF).toByte())
+  }
+
+  private fun encodeUint64(value: Long): ByteArray {
+    return ByteArray(NUM_ACTIVE_TIMESTAMP_BYTES) { index ->
+      val shift = (NUM_ACTIVE_TIMESTAMP_BYTES - 1 - index) * 8
+      ((value ushr shift) and 0xFF).toByte()
+    }
+  }
+
+  private fun encodeActiveTimestamp(): ByteArray {
+    val nowMillis = System.currentTimeMillis()
+    val seconds = nowMillis / 1000
+    val ticks = ((nowMillis % 1000) * (1 shl 15) / 1000).toLong()
+    val encodedTimestamp = (seconds shl 16) or (ticks shl 1)
+    return encodeUint64(encodedTimestamp)
   }
 
   private fun String.hexToByteArray(): ByteArray {
     return chunked(2).map { byteStr -> byteStr.toUByte(16).toByte() }.toByteArray()
+  }
+
+  private fun tryParseHexBytes(hex: String): ByteArray? {
+    if (hex.isEmpty() || hex.length % 2 != 0) {
+      return null
+    }
+
+    return try {
+      hex.hexToByteArray()
+    } catch (ex: IllegalArgumentException) {
+      null
+    } catch (ex: NumberFormatException) {
+      null
+    }
   }
 
   private fun getPrefs() =
@@ -430,15 +553,28 @@ class EnterNetworkFragment : Fragment() {
     private const val THREAD_PAN_ID_PREFS_KEY = "thread_pan_id"
     private const val THREAD_XPAN_ID_PREFS_KEY = "thread_xpan_id"
     private const val THREAD_MASTER_KEY_PREFS_KEY = "thread_master_key"
+    private const val THREAD_NETWORK_NAME_PREFS_KEY = "thread_network_name"
+    private const val THREAD_FULL_DATASET_PREFS_KEY = "thread_full_dataset"
 
+    private const val MAX_NETWORK_NAME_BYTES = 16
     private const val NUM_CHANNEL_BYTES = 3
     private const val NUM_PANID_BYTES = 2
     private const val NUM_XPANID_BYTES = 8
     private const val NUM_MASTER_KEY_BYTES = 16
+    private const val NUM_ACTIVE_TIMESTAMP_BYTES = 8
+    private const val NUM_SECURITY_POLICY_BYTES = 4
     private const val TYPE_CHANNEL = 0 // Type of Thread Channel TLV.
     private const val TYPE_PANID = 1 // Type of Thread PAN ID TLV.
     private const val TYPE_XPANID = 2 // Type of Thread Extended PAN ID TLV.
+    private const val TYPE_NETWORK_NAME = 3 // Type of Thread Network Name TLV.
     private const val TYPE_MASTER_KEY = 5 // Type of Thread Network Master Key TLV.
+    private const val TYPE_SECURITY_POLICY = 12 // Type of Thread Security Policy TLV.
+    private const val TYPE_ACTIVE_TIMESTAMP = 14 // Type of Thread Active Timestamp TLV.
+    private const val TYPE_CHANNEL_MASK = 53 // Type of Thread Channel Mask TLV.
+    private val DEFAULT_SECURITY_POLICY =
+      byteArrayOf(0x02, 0xA0.toByte(), 0xF7.toByte(), 0xF8.toByte())
+    private val DEFAULT_CHANNEL_MASK_PAGE_0 =
+      byteArrayOf(0x00, 0x04, 0x07, 0xFF.toByte(), 0xF8.toByte(), 0x00)
 
     fun newInstance(provisionNetworkType: ProvisionNetworkType): EnterNetworkFragment {
       return EnterNetworkFragment().apply {
