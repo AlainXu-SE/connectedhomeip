@@ -44,6 +44,7 @@
 #include <crypto/PersistentStorageOperationalKeystore.h>
 #include <inet/InetConfig.h>
 #include <lib/core/CHIPConfig.h>
+#include <lib/support/AutoRelease.h>
 #include <lib/support/SafeInt.h>
 #include <messaging/ExchangeMgr.h>
 #include <platform/DefaultTimerDelegate.h>
@@ -188,6 +189,9 @@ struct ServerInitParams
     // Access control delegate: MUST be injected. Used to look up access control rules. Must be
     // initialized before being provided.
     Access::AccessControl::Delegate * accessDelegate = nullptr;
+    // Access control auxiliary delegate: Optional. Used to look up auxiliary access control rules.
+    // If provided, must be initialized before being provided.
+    Access::AccessControl::Delegate * groupAuxiliaryAccessControlDelegate = nullptr;
     // ACL storage: MUST be injected. Used to store ACL entries in persistent storage. Must NOT
     // be initialized before being provided.
     app::AclStorage * aclStorage = nullptr;
@@ -552,8 +556,8 @@ private:
             }
 
             const Transport::PeerAddress & address = new_group.UsePerGroupAddress()
-                ? Transport::PeerAddress::Multicast(fabric->GetFabricId(), new_group.group_id)
-                : Transport::PeerAddress::Groupcast();
+                ? Transport::PeerAddress::BuildMatterPerGroupMulticastAddress(fabric->GetFabricId(), new_group.group_id)
+                : Transport::PeerAddress::BuildMatterIanaMulticastAddress();
 
             if (CHIP_NO_ERROR != mServer->GetTransportManager().MulticastGroupJoinLeave(address, true))
             {
@@ -573,7 +577,7 @@ private:
                     return;
                 }
                 const Transport::PeerAddress & address =
-                    Transport::PeerAddress::Multicast(fabric->GetFabricId(), old_group.group_id);
+                    Transport::PeerAddress::BuildMatterPerGroupMulticastAddress(fabric->GetFabricId(), old_group.group_id);
                 VerifyOrReturn(CHIP_NO_ERROR == mServer->GetTransportManager().MulticastGroupJoinLeave(address, false));
             }
             else
@@ -587,15 +591,11 @@ private:
                     Credentials::GroupDataProvider::GroupInfo group;
                     for (const FabricInfo & fabric : mServer->GetFabricTable())
                     {
-                        auto * iter = provider->IterateGroupInfo(fabric.GetFabricIndex());
-                        if (iter)
+                        chip::AutoRelease iter(provider->IterateGroupInfo(fabric.GetFabricIndex()));
+                        while (!iter.IsNull() && iter->Next(group) && !in_use)
                         {
-                            while (iter->Next(group) && !in_use)
-                            {
-                                in_use = !group.UsePerGroupAddress();
-                            }
+                            in_use = !group.UsePerGroupAddress();
                         }
-                        iter->Release();
                         if (in_use)
                             break;
                     }
@@ -603,7 +603,7 @@ private:
                 if (!in_use)
                 {
                     // Groupcast address no longer in use, unsubscribe
-                    const Transport::PeerAddress & address = Transport::PeerAddress::Groupcast();
+                    const Transport::PeerAddress & address = Transport::PeerAddress::BuildMatterIanaMulticastAddress();
                     VerifyOrReturn(CHIP_NO_ERROR == mServer->GetTransportManager().MulticastGroupJoinLeave(address, false));
                 }
             }

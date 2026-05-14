@@ -226,13 +226,26 @@ class DeviceProvisioningFragment : Fragment(), ServiceResolveListener {
 
     setAttestationDelegate()
 
+    val icdRegistrationInfo =
+      if (deviceInfo.isLIT) {
+        ICDRegistrationInfo.createForDeferredConfiguration()
+      } else {
+        null
+      }
+
+    val params =
+      CommissionParameters.Builder()
+        .setCsrNonce(null)
+        .setICDRegistrationInfo(icdRegistrationInfo)
+        .build()
+
     deviceController.pairDeviceWithAddress(
       id,
       deviceInfo.ipAddress,
       deviceInfo.port,
       deviceInfo.discriminator,
       deviceInfo.setupPinCode,
-      null
+      params
     )
   }
 
@@ -287,11 +300,18 @@ class DeviceProvisioningFragment : Fragment(), ServiceResolveListener {
 
       setAttestationDelegate()
 
+      val icdRegistrationInfo =
+        if (deviceInfo.isLIT) {
+          ICDRegistrationInfo.createForDeferredConfiguration()
+        } else {
+          null
+        }
+
       val params =
         CommissionParameters.Builder()
           .setCsrNonce(null)
           .setNetworkCredentials(network)
-          .setICDRegistrationInfo(null)
+          .setICDRegistrationInfo(icdRegistrationInfo)
           .build()
 
       deviceController.pairDeviceThroughBLE(gatt, connId, deviceId, deviceInfo.setupPinCode, params)

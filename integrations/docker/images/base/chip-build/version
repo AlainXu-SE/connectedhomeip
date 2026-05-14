@@ -1,1 +1,1 @@
-186 : [Ameba] Update Docker image for C++ macro conflict resolution
+195 : [crosscompile] Remove executables from armhf and aarch64 sysroots
